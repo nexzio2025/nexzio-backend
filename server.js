@@ -10,6 +10,7 @@ const rateLimit = require("express-rate-limit");
 
 // App
 const app = express();
+app.set("trust proxy", 1);
 
 
 // =========================
@@ -58,12 +59,19 @@ console.log("📧 Email configured:", process.env.EMAIL_USER);
 
 const transporter = nodemailer.createTransport({
 
-  service: "gmail",
+//  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
 
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   }
+  
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000
 
 });
 
