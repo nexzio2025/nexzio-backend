@@ -1,62 +1,130 @@
+// Load ENV
 require("dotenv").config();
 
+// Packages
 const express = require("express");
 const cors = require("cors");
+const nodemailer = require("nodemailer");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const { Resend } = require("resend");
 
+// App
 const app = express();
-
 app.set("trust proxy", 1);
+
 
 // =========================
 // SECURITY
 // =========================
 
+// Helmet
 app.use(helmet());
 
+// Rate Limit
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10
+  windowMs: 15 * 60 * 1000, // 15 mins
+  max: 10 // limit each IP
 });
 
 app.use(limiter);
+
 
 // =========================
 // MIDDLEWARE
 // =========================
 
 app.use(cors());
+
 app.use(express.json());
+
 
 // =========================
 // ENV VALIDATION
 // =========================
 
-if (!process.env.RESEND_API_KEY) {
-  console.error("❌ Missing RESEND_API_KEY");
+if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+
+  console.error("❌ Missing EMAIL_USER or EMAIL_PASS");
+
   process.exit(1);
+
 }
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+console.log("📧 Email configured:", process.env.EMAIL_USER);
 
-console.log("✅ Resend configured");
+
+// =========================
+// MAIL TRANSPORTER
+// =========================
+
+const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  },
+
+  tls: {
+    rejectUnauthorized: false
+  }
+  //service: "gmail",
+//  host: "smtp.gmail.com",
+//  port: 465,
+//  secure: true,
+//
+ // auth: {
+  //  user: process.env.EMAIL_USER,
+   // pass: process.env.EMAIL_PASS
+ // }
+  //
+//  connectionTimeout: 10000,
+ // greetingTimeout: 10000,
+  //socketTimeout: 10000
+//
+});
+
+
+// =========================
+// VERIFY EMAIL SERVER
+// =========================
+
+transporter.verify((err) => {
+
+  if (err) {
+
+    console.error("❌ Email error:", err);
+
+  } else {
+
+    console.log("✅ Email server ready");
+
+  }
+
+});
+
 
 // =========================
 // HOME ROUTE
 // =========================
 
 app.get("/", (req, res) => {
+
   res.send("🚀 Nexzio server is running");
+
 });
+
 
 // =========================
 // CONTACT ROUTE
 // =========================
 
 app.post("/contact", async (req, res) => {
+
   try {
+
     console.log("📥 Request:", req.body);
 
     const {
@@ -65,6 +133,7 @@ app.post("/contact", async (req, res) => {
       phone,
       message
     } = req.body;
+
 
     // =========================
     // VALIDATION
@@ -76,11 +145,14 @@ app.post("/contact", async (req, res) => {
       !phone?.trim() ||
       !message?.trim()
     ) {
+
       return res.json({
         success: false,
         error: "All fields are required"
       });
+
     }
+
 
     // =========================
     // EMAIL VALIDATION
@@ -90,67 +162,82 @@ app.post("/contact", async (req, res) => {
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(email)) {
+
       return res.json({
         success: false,
         error: "Invalid email address"
       });
+
     }
 
+
     // =========================
-    // SEND TO NEXZIO
+    // SEND ADMIN EMAIL
     // =========================
 
-    await resend.emails.send({
-      from: "Nexzio <hello@nexzio.online>",
-      to: ["hello@nexzio.online"],
+    const info = await transporter.sendMail({
+
+      from: `"Nexzio" <${process.env.EMAIL_USER}>`,
+
+      to: "nexzioservices@gmail.com",
+
+      cc: process.env.EMAIL_USER,
+
       subject: `New message from ${name}`,
+
       html: `
         <div style="font-family:sans-serif;padding:20px;">
+        
           <h2>📩 New Contact Message</h2>
 
           <p><b>Name:</b> ${name}</p>
+
           <p><b>Email:</b> ${email}</p>
+
           <p><b>Phone:</b> ${phone}</p>
 
           <p><b>Message:</b></p>
 
           <p>${message}</p>
+
         </div>
       `
+
     });
 
-    console.log("✅ Admin email sent");
+    console.log("✅ Email sent:", info.response);
+
 
     // =========================
     // AUTO REPLY
     // =========================
 
-    await resend.emails.send({
-      from: "Nexzio <hello@nexzio.online>",
-      to: [email],
+    await transporter.sendMail({
+
+      from: `"Nexzio" <${process.env.EMAIL_USER}>`,
+
+      to: email,
+
       subject: "We received your message",
-      html: `
-        <div style="font-family:sans-serif;padding:20px;">
-          <h2>Thanks for contacting Nexzio</h2>
 
-          <p>Hi ${name},</p>
+      text: `Hi ${name},
 
-          <p>
-            We received your message and our team
-            will contact you shortly.
-          </p>
+Thanks for contacting Nexzio.
 
-          <p>
-            Regards,<br>
-            Nexzio Team
-          </p>
-        </div>
-      `
+We received your message and our team will contact you shortly.
+
+- Nexzio`
+
     });
 
     console.log("📤 Auto reply sent");
 
-    return res.json({
+
+    // =========================
+    // SUCCESS RESPONSE
+    // =========================
+
+    res.json({
       success: true
     });
 
@@ -158,12 +245,15 @@ app.post("/contact", async (req, res) => {
 
     console.error("❌ Error:", err);
 
-    return res.json({
+    res.json({
       success: false,
       error: err.message
     });
+
   }
+
 });
+
 
 // =========================
 // START SERVER
@@ -172,5 +262,7 @@ app.post("/contact", async (req, res) => {
 const PORT = process.env.PORT || 8082;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+
 });
